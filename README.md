@@ -1,0 +1,1 @@
+# bidscoin_insatller
