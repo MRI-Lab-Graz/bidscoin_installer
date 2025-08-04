@@ -50,14 +50,14 @@ show_help() {
     echo ""
     echo "Usage:"
     echo "  $0                    # Install latest stable release"
-    echo "  $0 latest             # Install latest development commit"
+    echo "  $0 dev                # Install latest development commit"
     echo "  $0 <version>          # Install specific version (e.g., 4.6.2)"
     echo "  $0 --download         # Download latest script from GitHub"
     echo "  $0 --help            # Show this help message"
     echo ""
     echo "Examples:"
     echo "  $0                    # Installs latest stable (4.6.2)"
-    echo "  $0 latest             # Installs latest development code"
+    echo "  $0 dev                # Installs latest development code"
     echo "  $0 4.6.1              # Installs version 4.6.1"
     echo "  $0 4.5.0              # Installs version 4.5.0"
     echo ""
@@ -71,9 +71,9 @@ show_help() {
     echo "  7. Verifies the installation works"
     echo ""
     echo "Each version gets its own isolated environment:"
-    echo "  - Stable: bidscoin_stable/"
-    echo "  - Latest: bidscoin_latest/"
-    echo "  - Specific: bidscoin_v4.6.2/"
+    echo "  - Stable: bidscoin_v4.6.2/"
+    echo "  - Development: bidscoin_dev/"
+    echo "  - Specific: bidscoin_v4.6.1/"
     echo ""
     echo "Requirements:"
     echo "  - Python 3.8+"
@@ -101,17 +101,17 @@ case "$1" in
     "--download")
         VERSION_TYPE="download"
         ;;
-    "latest")
+    "dev"|"latest")
         VERSION_TYPE="latest"
         VERSION_NAME="latest development"
-        INSTALL_DIR="bidscoin_latest"
-        ENV_NAME="bidscoin_latest_env"
+        INSTALL_DIR="bidscoin_dev"
+        ENV_NAME="bidscoin_dev_env"
         ;;
     "")
         VERSION_TYPE="stable"
         VERSION_NAME="latest stable"
-        INSTALL_DIR="bidscoin_stable"
-        ENV_NAME="bidscoin_stable_env"
+        INSTALL_DIR="bidscoin_stable"  # Will be updated after version detection
+        ENV_NAME="bidscoin_stable_env"  # Will be updated after version detection
         ;;
     *)
         VERSION_TYPE="specific"
@@ -201,6 +201,9 @@ case "$VERSION_TYPE" in
         git checkout "$LATEST_TAG"
         print_success "Using stable release: $LATEST_TAG"
         VERSION_NAME="$LATEST_TAG"
+        # Update directory and environment names based on actual version
+        INSTALL_DIR="bidscoin_v$LATEST_TAG"
+        ENV_NAME="bidscoin_v${LATEST_TAG}_env"
         ;;
     "specific")
         print_status "Switching to version $SPECIFIC_VERSION..."

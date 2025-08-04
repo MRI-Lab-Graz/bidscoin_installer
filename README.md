@@ -24,7 +24,7 @@ This repository provides automated scripts to install, manage, and switch betwee
 
 ### Install Latest Development Version
 ```bash
-./install_bidscoin.sh latest
+./install_bidscoin.sh dev
 ```
 
 ### Install Specific Version
@@ -37,7 +37,7 @@ This repository provides automated scripts to install, manage, and switch betwee
 | Command | Description | Directory | Environment |
 |---------|-------------|-----------|-------------|
 | `./install_bidscoin.sh` | Latest stable release | `bidscoin_v4.6.2/` | `bidscoin_v4.6.2_env/` |
-| `./install_bidscoin.sh latest` | Latest development | `bidscoin_dev/` | `bidscoin_dev_env/` |
+| `./install_bidscoin.sh dev` | Latest development | `bidscoin_dev/` | `bidscoin_dev_env/` |
 | `./install_bidscoin.sh 4.6.1` | Specific version | `bidscoin_v4.6.1/` | `bidscoin_v4.6.1_env/` |
 
 ## Scripts Overview
@@ -54,7 +54,7 @@ Main installation script that:
 
 **Usage:**
 ```bash
-./install_bidscoin.sh [version|latest]
+./install_bidscoin.sh [version|dev]
 ./install_bidscoin.sh --download    # Download latest script
 ./install_bidscoin.sh --help        # Show detailed help
 ```
