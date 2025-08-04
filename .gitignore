@@ -34,7 +34,17 @@ Thumbs.db
 # Current environment tracking
 .current_venv
 
-# Test data and outputs
+# SENSITIVE DATA - DO NOT UPLOAD!
+# These directories contain patient/subject data and must never be committed
 rawdata/
 sourcedata/
 derivatives/
+bidsdata/
+data/
+**/sub-*/
+**/ses-*/
+
+# BIDS related sensitive files
+participants.tsv
+participants.json
+dataset_description.json
