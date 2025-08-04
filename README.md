@@ -2,6 +2,23 @@
 
 A comprehensive installation and version management system for [BIDScoin](https://github.com/Donders-Institute/bidscoin) - a Python toolkit for converting raw MRI data to the Brain Imaging Data Structure (BIDS) standard.
 
+## ⚠️ IMPORTANT: Data Privacy & Security
+
+**This installer is for software distribution only. Do NOT commit any patient or subject data to this repository.**
+
+### Protected Data Types
+- DICOM files (`.dcm`)
+- NIfTI files (`.nii`, `.nii.gz`)
+- Participant information (`participants.tsv`, `participants.json`)
+- Subject directories (`sub-*`, `ses-*`)
+- Any files containing patient identifiers
+
+### Data Handling
+- Use the `rawdata/` and `sourcedata/` directories locally only
+- These directories are automatically ignored by Git
+- Always review files before committing
+- Follow your institution's data protection guidelines
+
 ## Overview
 
 This repository provides automated scripts to install, manage, and switch between different versions of BIDScoin with isolated virtual environments. Each version gets its own dedicated environment to prevent conflicts.
