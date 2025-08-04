@@ -1,6 +1,5 @@
 # BIDScoin installation directories
-bidscoin_latest/
-bidscoin_stable/
+bidscoin_dev/
 bidscoin_v*/
 
 # Python virtual environments

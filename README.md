@@ -53,9 +53,9 @@ This repository provides automated scripts to install, manage, and switch betwee
 
 | Command | Description | Directory | Environment |
 |---------|-------------|-----------|-------------|
-| `./install_bidscoin.sh` | Latest stable release | `bidscoin_stable/` | `bidscoin_stable_env/` |
-| `./install_bidscoin.sh latest` | Latest development | `bidscoin_latest/` | `bidscoin_latest_env/` |
-| `./install_bidscoin.sh 4.6.2` | Specific version | `bidscoin_v4.6.2/` | `bidscoin_v4.6.2_env/` |
+| `./install_bidscoin.sh` | Latest stable release | `bidscoin_v4.6.2/` | `bidscoin_v4.6.2_env/` |
+| `./install_bidscoin.sh latest` | Latest development | `bidscoin_dev/` | `bidscoin_dev_env/` |
+| `./install_bidscoin.sh 4.6.1` | Specific version | `bidscoin_v4.6.1/` | `bidscoin_v4.6.1_env/` |
 
 ## Scripts Overview
 
@@ -78,8 +78,11 @@ Main installation script that:
 
 **Note:** After installation, you can activate any BIDScoin environment directly:
 ```bash
-cd bidscoin_latest                   # Navigate to your chosen version
-source bidscoin_latest_env/bin/activate  # Activate the environment
+cd bidscoin_dev                     # Navigate to development version
+source bidscoin_dev_env/bin/activate    # Activate the environment
+# OR for specific version:
+cd bidscoin_v4.6.2                  # Navigate to specific version
+source bidscoin_v4.6.2_env/bin/activate # Activate the environment
 ```
 
 ## Requirements
@@ -136,8 +139,8 @@ bash <(curl -s https://raw.githubusercontent.com/Donders-Institute/bidscoin/mast
 After installation, activate your chosen environment:
 
 ```bash
-cd bidscoin_stable  # or bidscoin_latest, bidscoin_v4.6.2, etc.
-source bidscoin_stable_env/bin/activate
+cd bidscoin_v4.6.2  # or bidscoin_dev, bidscoin_v4.6.1, etc.
+source bidscoin_v4.6.2_env/bin/activate
 ```
 
 Test the installation:
@@ -158,9 +161,9 @@ bidscoin_installer/
 ├── install_bidscoin.sh     # Main installation script
 ├── pyproject.toml          # Project configuration
 ├── README.md               # This file
-├── bidscoin_stable/        # Stable version installation
-├── bidscoin_latest/        # Latest development installation
-├── bidscoin_v4.6.2/        # Specific version installation
+├── bidscoin_v4.6.2/        # Stable version installation
+├── bidscoin_dev/           # Development version installation
+├── bidscoin_v4.6.1/        # Other version installations
 └── rawdata/                # Sample data directory
 ```
 
