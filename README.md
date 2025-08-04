@@ -76,23 +76,10 @@ Main installation script that:
 ./install_bidscoin.sh --help        # Show detailed help
 ```
 
-### `use_bidscoin.sh`
-Quick switcher that activates a specific BIDScoin version and its environment:
+**Note:** After installation, you can activate any BIDScoin environment directly:
 ```bash
-source ./use_bidscoin.sh latest     # Switch to latest and activate environment
-source ./use_bidscoin.sh stable     # Switch to stable and activate environment
-source ./use_bidscoin.sh 4.6.2      # Switch to specific version
-```
-
-### `switch_version.sh`
-Advanced version management with virtual environment support:
-```bash
-./switch_version.sh latest          # Switch to latest development
-./switch_version.sh stable          # Switch to stable release
-./switch_version.sh 4.6.1           # Switch to specific version
-./switch_version.sh list            # List available versions
-./switch_version.sh list-envs       # List virtual environments
-./switch_version.sh current         # Show current version
+cd bidscoin_latest                   # Navigate to your chosen version
+source bidscoin_latest_env/bin/activate  # Activate the environment
 ```
 
 ## Requirements
@@ -169,8 +156,6 @@ deactivate
 ```
 bidscoin_installer/
 ├── install_bidscoin.sh     # Main installation script
-├── use_bidscoin.sh         # Quick environment switcher
-├── switch_version.sh       # Advanced version management
 ├── pyproject.toml          # Project configuration
 ├── README.md               # This file
 ├── bidscoin_stable/        # Stable version installation
@@ -192,7 +177,6 @@ bidscoin_installer/
 
 ```bash
 ./install_bidscoin.sh --help    # Detailed installation help
-./switch_version.sh --help      # Version management help
 ```
 
 ## Contributing
