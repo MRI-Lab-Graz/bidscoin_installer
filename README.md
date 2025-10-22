@@ -14,6 +14,9 @@ This repository provides automated scripts to install, manage, and switch betwee
 - ⚡ **Fast Package Management**: Uses UV for speedy dependency installation
 - 🔧 **Quick Switching**: Easy version switching with environment activation
 - ✅ **Verification**: Automatic installation verification and testing
+- 🛡️ **Error Recovery**: Automatic cleanup on installation failure
+- 💾 **Smart Checks**: Disk space and dependency verification
+- 🎯 **Production Ready**: Robust error handling and user feedback
 
 ## Quick Start
 
@@ -73,19 +76,22 @@ source bidscoin_v4.6.2_env/bin/activate # Activate the environment
 - **Python 3.8+**: Required for BIDScoin
 - **Git**: For repository cloning and version management
 - **Internet connection**: For downloading dependencies
+- **~2GB free disk space**: For installation and dependencies
 
 ## Installation Process
 
 The installation script performs these steps:
 
-1. **System Check**: Verifies Python 3 and Git are installed
-2. **Repository Clone**: Downloads BIDScoin from GitHub
+1. **System Check**: Verifies Python 3, Git, and disk space availability
+2. **Repository Clone**: Downloads BIDScoin from GitHub to temporary directory
 3. **Version Switch**: Checks out the requested version/commit
-4. **Environment Setup**: Creates isolated Python virtual environment
-5. **Package Manager**: Installs UV for fast dependency management
-6. **Dependencies**: Installs all required and optional dependencies
-7. **BIDScoin Install**: Installs BIDScoin in editable development mode
-8. **Verification**: Tests the installation and core functionality
+4. **Directory Setup**: Moves to final installation directory with proper naming
+5. **Environment Setup**: Creates isolated Python virtual environment
+6. **Package Manager**: Installs and verifies UV for fast dependency management
+7. **Dependencies**: Installs all required and optional dependencies with progress feedback
+8. **BIDScoin Install**: Installs BIDScoin in editable development mode
+9. **Verification**: Tests the installation and core functionality
+10. **Cleanup**: Automatic cleanup on errors, detailed success summary
 
 ## Key Features
 
@@ -103,11 +109,18 @@ Uses [UV package manager](https://github.com/astral-sh/uv) for:
 - Better caching
 - Reduced installation time
 
+### Production Features
+The installer includes production-ready features:
+- **Error Recovery**: Automatic cleanup of partial installations on failure
+- **Progress Feedback**: Clear status updates during long-running operations
+- **Smart Validation**: Verifies disk space, dependencies, and installation success
+- **Robust Naming**: Stable versions use actual version numbers (e.g., `bidscoin_v4.6.2/`)
+
 ### Included Fixes
 The installer includes important fixes:
 - **PatientAgeDerived**: Uses StudyDate instead of AcquisitionDate for better compatibility
-- **Anonymization**: Disabled by default to preserve patient data
 - **Cache Clearing**: Ensures clean Python module loading
+- **Dependency Verification**: Confirms all tools are properly installed
 
 ## Remote Installation
 
@@ -157,6 +170,15 @@ bidscoin_installer/
 2. **Git not found**: Install Git from [git-scm.com](https://git-scm.com)
 3. **Permission errors**: Ensure you have write permissions in the installation directory
 4. **Network issues**: Check internet connection for repository cloning
+5. **Disk space**: Ensure at least 2GB free space (installer checks automatically)
+6. **Installation failure**: Installer automatically cleans up partial installations
+
+### Error Recovery
+
+The installer includes automatic error recovery:
+- **Cleanup on failure**: Removes incomplete installations automatically
+- **Progress logging**: Installation logs available for debugging
+- **Clear error messages**: Specific guidance for each type of error
 
 ### Getting Help
 

@@ -19,6 +19,26 @@
 
 set -e  # Exit on any error
 
+# Cleanup function for error handling
+cleanup() {
+    local exit_code=$?
+    if [ $exit_code -ne 0 ]; then
+        print_error "Installation failed with exit code $exit_code"
+        print_status "Cleaning up..."
+        
+        # Remove partially installed directories
+        if [ -n "$INSTALL_DIR" ] && [ -d "$INSTALL_DIR" ]; then
+            print_status "Removing incomplete installation directory: $INSTALL_DIR"
+            rm -rf "$INSTALL_DIR" 2>/dev/null || true
+        fi
+        
+        print_error "Installation aborted. Please review errors above and try again."
+    fi
+    exit $exit_code
+}
+
+trap cleanup EXIT
+
 # Color codes for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -56,7 +76,7 @@ show_help() {
     echo "  $0 --help            # Show this help message"
     echo ""
     echo "Examples:"
-    echo "  $0                    # Installs latest stable (4.6.2)"
+    echo "  $0                    # Installs latest stable"
     echo "  $0 dev                # Installs latest development code"
     echo "  $0 4.6.1              # Installs version 4.6.1"
     echo "  $0 4.5.0              # Installs version 4.5.0"
@@ -71,14 +91,15 @@ show_help() {
     echo "  7. Verifies the installation works"
     echo ""
     echo "Each version gets its own isolated environment:"
-    echo "  - Stable: bidscoin_v4.6.2/"
+    echo "  - Stable: bidscoin_v{version}/"
     echo "  - Development: bidscoin_dev/"
-    echo "  - Specific: bidscoin_v4.6.1/"
+    echo "  - Specific: bidscoin_v{version}/"
     echo ""
     echo "Requirements:"
     echo "  - Python 3.8+"
     echo "  - Git"
     echo "  - Internet connection"
+    echo "  - ~2GB free disk space"
     echo ""
     echo "For clients without this script:"
     echo "  bash <(curl -s https://raw.githubusercontent.com/Donders-Institute/bidscoin/master/install_bidscoin.sh)"
@@ -156,6 +177,24 @@ if ! command -v python3 &> /dev/null; then
 fi
 print_success "Python 3 found"
 
+# 1.5. Check available disk space (minimum 2GB)
+print_status "Checking available disk space..."
+AVAILABLE_SPACE=$(df . | awk 'NR==2 {print $4}')  # in KB
+AVAILABLE_GB=$((AVAILABLE_SPACE / 1024 / 1024))
+MIN_SPACE_GB=2
+
+if [ "$AVAILABLE_GB" -lt "$MIN_SPACE_GB" ]; then
+    print_warning "Limited disk space: only ${AVAILABLE_GB}GB available (recommend ${MIN_SPACE_GB}GB minimum)"
+    read -p "Continue anyway? (y/n) " -n 1 -r
+    echo
+    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+        print_status "Installation cancelled"
+        exit 0
+    fi
+else
+    print_success "Available disk space: ${AVAILABLE_GB}GB"
+fi
+
 # 2. Check for Git
 print_status "Checking Git installation..."
 if ! command -v git &> /dev/null; then
@@ -167,21 +206,25 @@ print_success "Git found"
 # 3. Clone BIDScoins repository
 print_status "Cloning BIDScoin repository..."
 
-if [ -d "$INSTALL_DIR" ]; then
-    print_warning "Directory $INSTALL_DIR already exists. Removing it..."
-    rm -rf "$INSTALL_DIR"
+# Use a temporary directory for cloning
+TEMP_CLONE_DIR="bidscoin_temp_$$"
+
+if [ -d "$TEMP_CLONE_DIR" ]; then
+    print_warning "Temporary directory already exists. Removing it..."
+    rm -rf "$TEMP_CLONE_DIR"
 fi
 
-git clone https://github.com/Donders-Institute/bidscoin.git "$INSTALL_DIR"
+git clone https://github.com/Donders-Institute/bidscoin.git "$TEMP_CLONE_DIR"
 if [ $? -ne 0 ]; then
     print_error "Failed to clone BIDScoin repository"
+    rm -rf "$TEMP_CLONE_DIR"
     exit 1
 fi
 print_success "Repository cloned successfully"
 
-# 4. Change to the BIDScoin directory and switch to requested version
-cd "$INSTALL_DIR"
-print_status "Entered BIDScoin directory: $(pwd)"
+# 4. Change to the cloned directory and determine final installation directory
+cd "$TEMP_CLONE_DIR"
+print_status "Entered temporary directory: $(pwd)"
 
 case "$VERSION_TYPE" in
     "latest")
@@ -196,6 +239,8 @@ case "$VERSION_TYPE" in
         LATEST_TAG=$(git tag -l --sort=-version:refname | head -1)
         if [ -z "$LATEST_TAG" ]; then
             print_error "No stable releases found"
+            cd ..
+            rm -rf "$TEMP_CLONE_DIR"
             exit 1
         fi
         git checkout "$LATEST_TAG"
@@ -210,12 +255,28 @@ case "$VERSION_TYPE" in
         if ! git checkout "$SPECIFIC_VERSION" 2>/dev/null; then
             print_error "Version $SPECIFIC_VERSION not found"
             print_status "Available versions:"
-            git tag -l --sort=-version:refname | head -10
+            git tag -l --sort=-version:refrange | head -10
+            cd ..
+            rm -rf "$TEMP_CLONE_DIR"
             exit 1
         fi
         print_success "Using version: $SPECIFIC_VERSION"
         ;;
 esac
+
+# Now rename temp directory to final install directory
+cd ..
+print_status "Finalizing installation directory..."
+if [ -d "$INSTALL_DIR" ]; then
+    print_warning "Installation directory $INSTALL_DIR already exists. Removing it..."
+    rm -rf "$INSTALL_DIR"
+fi
+mv "$TEMP_CLONE_DIR" "$INSTALL_DIR"
+print_success "Installation directory ready: $INSTALL_DIR"
+
+# Change into final installation directory
+cd "$INSTALL_DIR"
+print_status "Entered BIDScoin directory: $(pwd)"
 
 # 5. Create virtual environment
 print_status "Creating Python virtual environment..."
@@ -235,13 +296,25 @@ print_success "Virtual environment activated"
 
 # 7. Upgrade pip
 print_status "Upgrading pip..."
-python -m pip install --upgrade pip
-print_success "Pip upgraded"
+if ! python -m pip install --upgrade pip > /dev/null 2>&1; then
+    print_error "Failed to upgrade pip"
+    exit 1
+fi
+print_success "Pip upgraded successfully"
 
 # 8. Install UV package manager
 print_status "Installing UV package manager..."
-python -m pip install uv
-print_success "UV package manager installed"
+if ! python -m pip install uv > /dev/null 2>&1; then
+    print_error "Failed to install UV package manager"
+    exit 1
+fi
+
+# Verify UV installation
+if ! command -v uv &> /dev/null; then
+    print_error "UV installed but not found in PATH"
+    exit 1
+fi
+print_success "UV package manager installed successfully"
 
 # 9. Modify pyproject.toml to exclude virtual environments
 print_status "Configuring package discovery..."
@@ -262,7 +335,13 @@ fi
 
 # 10. Install dependencies using UV
 print_status "Installing BIDScoins dependencies with UV..."
-uv pip install -e .
+print_status "This may take several minutes on first installation..."
+if ! uv pip install -e . > /tmp/uv_install.log 2>&1; then
+    print_error "Failed to install dependencies"
+    print_status "Installation log:"
+    tail -20 /tmp/uv_install.log
+    exit 1
+fi
 print_success "Dependencies and BIDScoins installed successfully"
 
 # 10.5. Clear any Python cache to ensure clean installation
@@ -320,25 +399,29 @@ echo "======================================================"
 print_success "🎉 BIDScoin installation completed successfully!"
 echo "======================================================"
 echo ""
-print_status "Installed version: $VERSION_NAME"
-print_status "Installation directory: $(pwd)"
-print_status "Virtual environment: $(pwd)/$ENV_NAME"
+print_status "Installation Summary:"
+echo "  Version: $VERSION_NAME"
+echo "  Installation Directory: $(pwd)"
+echo "  Virtual Environment: $(pwd)/$ENV_NAME"
+echo "  Python: $(python --version 2>&1)"
+echo "  UV Package Manager: $(uv --version 2>&1)"
 echo ""
-print_status "Quick start:"
-echo "1. Enter the directory: cd $INSTALL_DIR"
-echo "2. Activate environment: source $ENV_NAME/bin/activate"
-echo "3. Test installation: bidscoin --help"
-echo "4. Run commands or Python: python -c 'import bidscoin'"
-echo "5. Deactivate when done: deactivate"
+print_status "Quick Start:"
+echo "  1. Change directory: cd $INSTALL_DIR"
+echo "  2. Activate environment: source $ENV_NAME/bin/activate"
+echo "  3. Test installation: bidscoin --help"
+echo "  4. Deactivate when done: deactivate"
 echo ""
-print_status "Install other versions:"
-echo "• Latest stable: ./install_bidscoin.sh"
-echo "• Latest development: ./install_bidscoin.sh latest"
-echo "• Specific version: ./install_bidscoin.sh 4.6.1"
+print_status "Install Additional Versions:"
+echo "  • Specific version: ../install_bidscoin.sh 4.6.1"
+echo "  • Development version: ../install_bidscoin.sh dev"
+echo "  • Latest stable: ../install_bidscoin.sh"
 echo ""
-print_status "Important fixes included:"
-echo "• PatientAgeDerived now uses StudyDate instead of AcquisitionDate"
-echo "• Anonymization disabled (-l n flag) to preserve patient data"
-echo "• Clean Python cache for proper module loading"
+print_status "Key Features Enabled:"
+echo "  ✓ PatientAgeDerived uses StudyDate (better compatibility)"
+echo "  ✓ Python cache cleared (clean module loading)"
+echo "  ✓ Editable installation (development-friendly)"
+echo "  ✓ Isolated virtual environment"
 echo ""
 print_success "You're all set! Happy brain imaging! 🧠"
+echo ""
