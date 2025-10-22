@@ -35,6 +35,16 @@ This repository provides automated scripts to install, manage, and switch betwee
 ./install_bidscoin.sh 4.6.2
 ```
 
+### List Available Versions
+```bash
+./install_bidscoin.sh --list
+```
+
+Shows all available BIDScoin versions with recommendations:
+- ✅ **✓** = Recommended (latest stable versions)
+- ⚠️ **(older)** = Still works but consider upgrading  
+- ❌ **(legacy)** = Not recommended (may have compatibility issues)
+
 ## Installation Options
 
 | Command | Description | Directory | Environment |
@@ -59,6 +69,7 @@ Main installation script that:
 ```bash
 ./install_bidscoin.sh [version|dev]
 ./install_bidscoin.sh --download    # Download latest script
+./install_bidscoin.sh --list        # List all available versions
 ./install_bidscoin.sh --help        # Show detailed help
 ```
 

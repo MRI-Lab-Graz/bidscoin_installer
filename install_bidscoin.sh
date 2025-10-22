@@ -73,13 +73,14 @@ show_help() {
     echo "  $0 dev                # Install latest development commit"
     echo "  $0 <version>          # Install specific version (e.g., 4.6.2)"
     echo "  $0 --download         # Download latest script from GitHub"
+    echo "  $0 --list             # List all available BIDScoin versions"
     echo "  $0 --help            # Show this help message"
     echo ""
     echo "Examples:"
     echo "  $0                    # Installs latest stable"
     echo "  $0 dev                # Installs latest development code"
     echo "  $0 4.6.1              # Installs version 4.6.1"
-    echo "  $0 4.5.0              # Installs version 4.5.0"
+    echo "  $0 --list             # Shows all available versions"
     echo ""
     echo "What this script does:"
     echo "  1. Clones BIDScoins repository from GitHub"
@@ -121,6 +122,9 @@ ENV_NAME=""
 case "$1" in
     "--download")
         VERSION_TYPE="download"
+        ;;
+    "--list")
+        VERSION_TYPE="list"
         ;;
     "dev"|"latest")
         VERSION_TYPE="latest"
@@ -166,6 +170,47 @@ if [ "$VERSION_TYPE" = "download" ]; then
     chmod +x "$SCRIPT_NAME"
     print_success "Script downloaded as $SCRIPT_NAME"
     print_status "Now run: ./$SCRIPT_NAME"
+    exit 0
+fi
+
+# Handle version listing
+if [ "$VERSION_TYPE" = "list" ]; then
+    print_status "Fetching available BIDScoin versions..."
+    echo ""
+    
+    # Get current year for age calculation
+    CURRENT_YEAR=$(date +%Y)
+    
+    # Get versions and process them
+    git ls-remote --tags https://github.com/Donders-Institute/bidscoin.git 2>/dev/null | \
+    grep -o 'refs/tags/[0-9]\+\.[0-9]\+\(\.[0-9]\+\)\?' | \
+    sed 's|refs/tags/||' | \
+    sort -V -r | \
+    head -20 | \
+    while read -r version; do
+        # Extract major version for age assessment
+        major_version=$(echo "$version" | cut -d. -f1)
+        
+        if [ "$major_version" -lt 4 ]; then
+            echo "$version (legacy - not recommended)"
+        elif [ "$major_version" -eq 4 ]; then
+            minor_version=$(echo "$version" | cut -d. -f2)
+            if [ "$minor_version" -lt 3 ]; then
+                echo "$version (older - consider upgrading)"
+            else
+                echo "$version ✓"
+            fi
+        else
+            echo "$version ✓ (latest)"
+        fi
+    done
+    
+    echo ""
+    print_success "Available versions fetched successfully"
+    print_status "Legend: ✓ = Recommended | (older) = Still works | (legacy) = Not recommended"
+    print_status "Use: ./install_bidscoin.sh <version> to install a specific version"
+    print_status "Use: ./install_bidscoin.sh dev for latest development"
+    print_status "Use: ./install_bidscoin.sh for latest stable"
     exit 0
 fi
 
@@ -333,16 +378,30 @@ else
     exit 1
 fi
 
-# 10. Install dependencies using UV
-print_status "Installing BIDScoins dependencies with UV..."
+# 10. Install dependencies using UV (or pip for older versions)
+print_status "Installing BIDScoins dependencies..."
 print_status "This may take several minutes on first installation..."
-if ! uv pip install -e . > /tmp/uv_install.log 2>&1; then
-    print_error "Failed to install dependencies"
-    print_status "Installation log:"
-    tail -20 /tmp/uv_install.log
-    exit 1
+
+# Check if this is an older version that needs pip instead of uv
+if [ -f "setup.py" ] && [ ! -f "pyproject.toml" ] || ! grep -q "\[project\]" pyproject.toml 2>/dev/null; then
+    print_warning "Older BIDScoin version detected - using pip instead of uv"
+    if ! pip install -e . > /tmp/pip_install.log 2>&1; then
+        print_error "Failed to install dependencies with pip"
+        print_status "Installation log:"
+        tail -20 /tmp/pip_install.log
+        exit 1
+    fi
+    print_success "Dependencies and BIDScoins installed successfully (using pip)"
+else
+    print_status "Modern BIDScoin version detected - using uv for faster installation"
+    if ! uv pip install -e . > /tmp/uv_install.log 2>&1; then
+        print_error "Failed to install dependencies with uv"
+        print_status "Installation log:"
+        tail -20 /tmp/uv_install.log
+        exit 1
+    fi
+    print_success "Dependencies and BIDScoins installed successfully (using uv)"
 fi
-print_success "Dependencies and BIDScoins installed successfully"
 
 # 10.5. Clear any Python cache to ensure clean installation
 print_status "Clearing Python cache for clean installation..."
@@ -355,19 +414,23 @@ print_status "Verifying BIDScoin installation..."
 python -c "import bidscoin; print(f'BIDScoin version: {bidscoin.__version__}')"
 print_success "BIDScoin installation verified"
 
-# 12. Test PatientAgeDerived fix
-print_status "Testing PatientAgeDerived calculation fix..."
-python -c "
+# 12. Test PatientAgeDerived fix (only for dev version)
+if [ "$VERSION_TYPE" = "latest" ]; then
+    print_status "Testing PatientAgeDerived calculation fix..."
+    python -c "
 try:
-    import bidscoin.plugins.dcm2niix2bids as plugin
-    print('✓ dcm2niix2bids plugin imported successfully')
-    interface = plugin.Interface()
-    print('✓ Plugin interface created')
-    print('✓ PatientAgeDerived fix is in place (uses StudyDate instead of AcquisitionDate)')
+        import bidscoin.plugins.dcm2niix2bids as plugin
+        print('✓ dcm2niix2bids plugin imported successfully')
+        interface = plugin.Interface()
+        print('✓ Plugin interface created')
+        print('✓ PatientAgeDerived fix is in place (uses StudyDate instead of AcquisitionDate)')
 except Exception as e:
-    print(f'✗ Plugin test failed: {e}')
-    print('Note: This is expected if no DICOM test files are available')
-"
+        print(f'✗ Plugin test failed: {e}')
+        print('Note: This is expected if no DICOM test files are available')
+    "
+else
+    print_status "Skipping PatientAgeDerived test (only available in dev version)"
+fi
 
 # 13. Test basic functionality
 print_status "Testing basic functionality..."
@@ -418,7 +481,9 @@ echo "  • Development version: ../install_bidscoin.sh dev"
 echo "  • Latest stable: ../install_bidscoin.sh"
 echo ""
 print_status "Key Features Enabled:"
-echo "  ✓ PatientAgeDerived uses StudyDate (better compatibility)"
+if [ "$VERSION_TYPE" = "latest" ]; then
+    echo "  ✓ PatientAgeDerived uses StudyDate (better compatibility)"
+fi
 echo "  ✓ Python cache cleared (clean module loading)"
 echo "  ✓ Editable installation (development-friendly)"
 echo "  ✓ Isolated virtual environment"
