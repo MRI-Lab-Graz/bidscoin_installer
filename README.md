@@ -49,9 +49,9 @@ Shows all available BIDScoin versions with recommendations:
 
 | Command | Description | Directory | Environment |
 |---------|-------------|-----------|-------------|
-| `./install_bidscoin.sh` | Latest stable release | `bidscoin_v4.6.2/` | `bidscoin_v4.6.2_env/` |
-| `./install_bidscoin.sh dev` | Latest development | `bidscoin_dev/` | `bidscoin_dev_env/` |
-| `./install_bidscoin.sh 4.6.1` | Specific version | `bidscoin_v4.6.1/` | `bidscoin_v4.6.1_env/` |
+| `./install_bidscoin.sh` | Latest stable release | `bidscoin_v4.6.2/` | `env/` |
+| `./install_bidscoin.sh dev` | Latest development | `bidscoin_dev/` | `env/` |
+| `./install_bidscoin.sh 4.6.1` | Specific version | `bidscoin_v4.6.1/` | `env/` |
 
 ## Scripts Overview
 
@@ -76,10 +76,10 @@ Main installation script that:
 **Note:** After installation, you can activate any BIDScoin environment directly:
 ```bash
 cd bidscoin_dev                     # Navigate to development version
-source bidscoin_dev_env/bin/activate    # Activate the environment
+source env/bin/activate             # Activate the environment
 # OR for specific version:
 cd bidscoin_v4.6.2                  # Navigate to specific version
-source bidscoin_v4.6.2_env/bin/activate # Activate the environment
+source env/bin/activate             # Activate the environment
 ```
 
 ## Requirements
@@ -147,7 +147,7 @@ After installation, activate your chosen environment:
 
 ```bash
 cd bidscoin_v4.6.2  # or bidscoin_dev, bidscoin_v4.6.1, etc.
-source bidscoin_v4.6.2_env/bin/activate
+source env/bin/activate
 ```
 
 Test the installation:

@@ -130,19 +130,19 @@ case "$1" in
         VERSION_TYPE="latest"
         VERSION_NAME="latest development"
         INSTALL_DIR="bidscoin_dev"
-        ENV_NAME="bidscoin_dev_env"
+        ENV_NAME="env"
         ;;
     "")
         VERSION_TYPE="stable"
         VERSION_NAME="latest stable"
         INSTALL_DIR="bidscoin_stable"  # Will be updated after version detection
-        ENV_NAME="bidscoin_stable_env"  # Will be updated after version detection
+        ENV_NAME="env"  # Will be updated after version detection
         ;;
     *)
         VERSION_TYPE="specific"
         VERSION_NAME="version $1"
         INSTALL_DIR="bidscoin_v$1"
-        ENV_NAME="bidscoin_v$1_env"
+        ENV_NAME="env"
         SPECIFIC_VERSION="$1"
         ;;
 esac
@@ -293,7 +293,7 @@ case "$VERSION_TYPE" in
         VERSION_NAME="$LATEST_TAG"
         # Update directory and environment names based on actual version
         INSTALL_DIR="bidscoin_v$LATEST_TAG"
-        ENV_NAME="bidscoin_v${LATEST_TAG}_env"
+        ENV_NAME="env"
         ;;
     "specific")
         print_status "Switching to version $SPECIFIC_VERSION..."
@@ -465,13 +465,14 @@ echo ""
 print_status "Installation Summary:"
 echo "  Version: $VERSION_NAME"
 echo "  Installation Directory: $(pwd)"
-echo "  Virtual Environment: $(pwd)/$ENV_NAME"
+echo "  Virtual Environment: $(pwd)/env"
 echo "  Python: $(python --version 2>&1)"
 echo "  UV Package Manager: $(uv --version 2>&1)"
 echo ""
 print_status "Quick Start:"
 echo "  1. Change directory: cd $INSTALL_DIR"
-echo "  2. Activate environment: source $ENV_NAME/bin/activate"
+echo "  2. Activate environment: source env/bin/activate"
+echo "     (or: source $(pwd)/env/bin/activate)"
 echo "  3. Test installation: bidscoin --help"
 echo "  4. Deactivate when done: deactivate"
 echo ""
