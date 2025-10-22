@@ -129,7 +129,7 @@ The installer includes production-ready features:
 
 ### Included Fixes
 The installer includes important fixes:
-- **PatientAgeDerived**: Uses StudyDate instead of AcquisitionDate for better compatibility
+- **PatientAgeDerived**: Uses StudyDate instead of AcquisitionDate for better compatibility *(dev version only)*
 - **Cache Clearing**: Ensures clean Python module loading
 - **Dependency Verification**: Confirms all tools are properly installed
 
