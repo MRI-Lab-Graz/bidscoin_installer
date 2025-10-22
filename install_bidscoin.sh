@@ -17,21 +17,50 @@
 #   ./install_bidscoin.sh --help    # Show this help
 # ======================================================================
 
+# Check if we're running in bash
+if [ -z "$BASH_VERSION" ]; then
+    echo "Error: This script requires bash to run properly."
+    echo "Please run with: bash $0 $@"
+    exit 1
+fi
+
+# Check if basic commands are available
+for cmd in rm mkdir cd pwd echo cat grep sed awk; do
+    if ! command -v "$cmd" &> /dev/null; then
+        echo "Error: Required command '$cmd' not found in PATH."
+        exit 1
+    fi
+done
+
 set -e  # Exit on any error
 
 # Cleanup function for error handling
 cleanup() {
     local exit_code=$?
+    # Prevent cleanup from being called during cleanup
+    if [ "${CLEANUP_IN_PROGRESS:-0}" -eq 1 ]; then
+        return
+    fi
+    CLEANUP_IN_PROGRESS=1
+
     if [ $exit_code -ne 0 ]; then
         print_error "Installation failed with exit code $exit_code"
         print_status "Cleaning up..."
-        
-        # Remove partially installed directories
-        if [ -n "$INSTALL_DIR" ] && [ -d "$INSTALL_DIR" ]; then
+
+        # Only cleanup if we have installation variables set
+        if [ -n "${INSTALL_DIR:-}" ] && [ -d "$INSTALL_DIR" ]; then
             print_status "Removing incomplete installation directory: $INSTALL_DIR"
-            rm -rf "$INSTALL_DIR" 2>/dev/null || true
+            rm -rf "$INSTALL_DIR" 2>/dev/null || print_warning "Could not remove $INSTALL_DIR"
         fi
-        
+
+        if [ -n "${TEMP_CLONE_DIR:-}" ] && [ -d "$TEMP_CLONE_DIR" ]; then
+            print_status "Removing temporary directory: $TEMP_CLONE_DIR"
+            rm -rf "$TEMP_CLONE_DIR" 2>/dev/null || print_warning "Could not remove $TEMP_CLONE_DIR"
+        fi
+
+        # Clean up temporary log files
+        rm -f /tmp/pip_install.log /tmp/uv_install.log 2>/dev/null || true
+
         print_error "Installation aborted. Please review errors above and try again."
     fi
     exit $exit_code
@@ -39,12 +68,23 @@ cleanup() {
 
 trap cleanup EXIT
 
-# Color codes for output
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-NC='\033[0m' # No Color
+# Handle interrupts gracefully
+trap 'echo ""; print_warning "Installation interrupted by user"; cleanup' INT TERM
+
+# Color codes for output (only if terminal supports colors)
+if [ -t 1 ] && [ "${TERM:-dumb}" != "dumb" ] && command -v tput &> /dev/null && tput colors &> /dev/null && [ "$(tput colors)" -ge 8 ]; then
+    RED='\033[0;31m'
+    GREEN='\033[0;32m'
+    YELLOW='\033[1;33m'
+    BLUE='\033[0;34m'
+    NC='\033[0m' # No Color
+else
+    RED=''
+    GREEN=''
+    YELLOW=''
+    BLUE=''
+    NC=''
+fi
 
 # Function to print colored output
 print_status() {
@@ -147,6 +187,18 @@ case "$1" in
         ;;
 esac
 
+# Check if we're running as root (not recommended)
+if [ "$(id -u)" -eq 0 ]; then
+    print_warning "Running as root is not recommended and may cause permission issues."
+    print_warning "Consider running as a regular user."
+    read -p "Continue anyway? (y/n) " -n 1 -r
+    echo
+    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+        print_status "Installation cancelled"
+        exit 0
+    fi
+fi
+
 print_status "🧠 BIDScoin Installation Starting..."
 echo "======================================================"
 print_status "Installing: $VERSION_NAME"
@@ -157,16 +209,27 @@ if [ "$VERSION_TYPE" = "download" ]; then
     print_status "Downloading latest installation script..."
     SCRIPT_URL="https://raw.githubusercontent.com/Donders-Institute/bidscoin/master/install_bidscoin.sh"
     SCRIPT_NAME="install_bidscoin.sh"
-    
+
     if command -v curl &> /dev/null; then
-        curl -o "$SCRIPT_NAME" "$SCRIPT_URL"
+        if ! curl -s -o "$SCRIPT_NAME" "$SCRIPT_URL"; then
+            print_error "Failed to download script with curl"
+            exit 1
+        fi
     elif command -v wget &> /dev/null; then
-        wget -O "$SCRIPT_NAME" "$SCRIPT_URL"
+        if ! wget -q -O "$SCRIPT_NAME" "$SCRIPT_URL"; then
+            print_error "Failed to download script with wget"
+            exit 1
+        fi
     else
         print_error "Neither curl nor wget found. Please install one of them or download the script manually."
         exit 1
     fi
-    
+
+    if [ ! -f "$SCRIPT_NAME" ]; then
+        print_error "Script download failed - file not created"
+        exit 1
+    fi
+
     chmod +x "$SCRIPT_NAME"
     print_success "Script downloaded as $SCRIPT_NAME"
     print_status "Now run: ./$SCRIPT_NAME"
@@ -218,18 +281,50 @@ fi
 print_status "Checking Python installation..."
 if ! command -v python3 &> /dev/null; then
     print_error "Python 3 is required but not found."
+    print_status "Please install Python 3.8 or higher from https://python.org"
     exit 1
 fi
-print_success "Python 3 found"
+
+# Check Python version (require 3.8+)
+PYTHON_VERSION=$(python3 -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')")
+PYTHON_MAJOR=$(echo $PYTHON_VERSION | cut -d. -f1)
+PYTHON_MINOR=$(echo $PYTHON_VERSION | cut -d. -f2)
+
+if [ "$PYTHON_MAJOR" -lt 3 ] || { [ "$PYTHON_MAJOR" -eq 3 ] && [ "$PYTHON_MINOR" -lt 8 ]; }; then
+    print_error "Python $PYTHON_VERSION found, but Python 3.8+ is required."
+    print_status "Please upgrade Python from https://python.org"
+    exit 1
+fi
+
+print_success "Python $PYTHON_VERSION found (compatible)"
 
 # 1.5. Check available disk space (minimum 2GB)
 print_status "Checking available disk space..."
-AVAILABLE_SPACE=$(df . | awk 'NR==2 {print $4}')  # in KB
+
+# Determine where the installation will actually happen
+# For relative paths, check current directory; for absolute paths, check that location
+if [[ "$INSTALL_DIR" == /* ]]; then
+    # Absolute path
+    INSTALL_PARENT=$(dirname "$INSTALL_DIR")
+else
+    # Relative path - check current directory
+    INSTALL_PARENT="."
+fi
+
+if [ ! -w "$INSTALL_PARENT" ]; then
+    print_error "No write permission in installation directory: $INSTALL_PARENT"
+    print_status "Please run this script from a directory where you have write permissions,"
+    print_status "or specify an absolute path with write permissions."
+    exit 1
+fi
+
+AVAILABLE_SPACE=$(df "$INSTALL_PARENT" | awk 'NR==2 {print $4}')  # in KB
 AVAILABLE_GB=$((AVAILABLE_SPACE / 1024 / 1024))
 MIN_SPACE_GB=2
 
 if [ "$AVAILABLE_GB" -lt "$MIN_SPACE_GB" ]; then
     print_warning "Limited disk space: only ${AVAILABLE_GB}GB available (recommend ${MIN_SPACE_GB}GB minimum)"
+    print_warning "Installation will require ~2GB of space"
     read -p "Continue anyway? (y/n) " -n 1 -r
     echo
     if [[ ! $REPLY =~ ^[Yy]$ ]]; then
@@ -244,9 +339,48 @@ fi
 print_status "Checking Git installation..."
 if ! command -v git &> /dev/null; then
     print_error "Git is required but not found."
+    print_status "Please install Git from https://git-scm.com"
     exit 1
 fi
+
+# Check git version (basic functionality)
+if ! git --version &> /dev/null; then
+    print_error "Git installation appears to be broken."
+    exit 1
+fi
+
 print_success "Git found"
+
+# Check network connectivity to GitHub
+print_status "Checking network connectivity..."
+if ! curl -s --connect-timeout 10 https://github.com > /dev/null 2>&1 && ! wget -q --timeout=10 -O /dev/null https://github.com > /dev/null 2>&1; then
+    print_error "Cannot connect to GitHub. Please check your internet connection."
+    exit 1
+fi
+print_success "Network connectivity confirmed"
+
+# Check available memory (minimum 4GB recommended)
+print_status "Checking available memory..."
+if command -v free &> /dev/null; then
+    AVAILABLE_MEM=$(free -g | awk 'NR==2 {print $7}')  # Available memory in GB
+    if [ "$AVAILABLE_MEM" -lt 4 ]; then
+        print_warning "Limited memory: ${AVAILABLE_MEM}GB available (4GB+ recommended)"
+        print_warning "Installation may be slow or fail with limited memory"
+    else
+        print_success "Available memory: ${AVAILABLE_MEM}GB"
+    fi
+elif command -v vm_stat &> /dev/null; then
+    # macOS
+    AVAILABLE_MEM=$(( $(vm_stat | awk '/free/ {print $3}' | tr -d '.') / 1024 / 1024 ))
+    if [ "$AVAILABLE_MEM" -lt 4 ]; then
+        print_warning "Limited memory: ${AVAILABLE_MEM}GB available (4GB+ recommended)"
+        print_warning "Installation may be slow or fail with limited memory"
+    else
+        print_success "Available memory: ${AVAILABLE_MEM}GB"
+    fi
+else
+    print_warning "Could not check available memory (non-critical)"
+fi
 
 # 3. Clone BIDScoins repository
 print_status "Cloning BIDScoin repository..."
@@ -259,12 +393,25 @@ if [ -d "$TEMP_CLONE_DIR" ]; then
     rm -rf "$TEMP_CLONE_DIR"
 fi
 
-git clone https://github.com/Donders-Institute/bidscoin.git "$TEMP_CLONE_DIR"
-if [ $? -ne 0 ]; then
-    print_error "Failed to clone BIDScoin repository"
-    rm -rf "$TEMP_CLONE_DIR"
+# Clone with timeout and retry logic
+CLONE_SUCCESS=0
+for attempt in {1..3}; do
+    print_status "Clone attempt $attempt/3..."
+    if timeout 300 git clone https://github.com/Donders-Institute/bidscoin.git "$TEMP_CLONE_DIR" 2>/dev/null; then
+        CLONE_SUCCESS=1
+        break
+    else
+        print_warning "Clone attempt $attempt failed, retrying in 5 seconds..."
+        sleep 5
+    fi
+done
+
+if [ $CLONE_SUCCESS -eq 0 ]; then
+    print_error "Failed to clone BIDScoin repository after 3 attempts"
+    rm -rf "$TEMP_CLONE_DIR" 2>/dev/null || true
     exit 1
 fi
+
 print_success "Repository cloned successfully"
 
 # 4. Change to the cloned directory and determine final installation directory
@@ -364,6 +511,15 @@ print_success "UV package manager installed successfully"
 # 9. Modify pyproject.toml to exclude virtual environments
 print_status "Configuring package discovery..."
 if [ -f "pyproject.toml" ]; then
+    # Check write permissions
+    if [ ! -w "pyproject.toml" ]; then
+        print_error "No write permission for pyproject.toml"
+        exit 1
+    fi
+
+    # Create backup before modification
+    cp pyproject.toml pyproject.toml.backup 2>/dev/null || print_warning "Could not create backup of pyproject.toml"
+
     # Check if the exclusion configuration already exists
     if ! grep -q "\[tool\.setuptools\.packages\.find\]" pyproject.toml; then
         echo "" >> pyproject.toml
