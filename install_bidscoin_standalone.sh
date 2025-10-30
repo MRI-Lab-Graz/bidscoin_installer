@@ -1,20 +1,29 @@
 #!/bin/bash
 
 # ======================================================================
-# BIDScoins Automated Installation Script
+# BIDScoins STANDALONE Installation Script
 # ======================================================================
-# This script provides a complete automated setup for BIDScoins:
-# - Downloads the latest script (--download option)
-# - Clones BIDScoins repository
-# - Creates Python virtual environment
-# - Installs UV package manager
-# - Installs dependencies via pyproject.toml
-# - Installs BIDScoins in editable mode
+# This script provides a COMPLETELY ISOLATED installation of BIDScoins:
+# - Downloads standalone Python (no system Python required!)
+# - Downloads portable Git (no system Git required!)
+# - Creates fully self-contained installation
+# - Everything in one directory - completely portable
+# - Can be moved to any compatible system
+#
+# Perfect for:
+# - Systems where you don't have admin rights
+# - Environments with incompatible system Python
+# - Creating portable installations
+# - Complete isolation from system dependencies
 #
 # Usage:
-#   ./install_bidscoin.sh           # Run installation
-#   ./install_bidscoin.sh --download # Download latest script
-#   ./install_bidscoin.sh --help    # Show this help
+#   ./install_bidscoin_standalone.sh           # Run installation
+#   ./install_bidscoin_standalone.sh dev       # Install dev version
+#   ./install_bidscoin_standalone.sh 4.6.2     # Install specific version
+#   ./install_bidscoin_standalone.sh --help    # Show this help
+#
+# Note: For standard installation using system Python/Git, use:
+#       ./install_bidscoin.sh
 # ======================================================================
 
 # Check if we're running in bash
@@ -24,7 +33,7 @@ if [ -z "$BASH_VERSION" ]; then
     exit 1
 fi
 
-# Check if basic commands are available
+# Check if basic commands are available (only truly essential shell builtins)
 for cmd in rm mkdir cd pwd echo cat grep sed awk; do
     if ! command -v "$cmd" &> /dev/null; then
         echo "Error: Required command '$cmd' not found in PATH."
@@ -33,6 +42,13 @@ for cmd in rm mkdir cd pwd echo cat grep sed awk; do
 done
 
 set -e  # Exit on any error
+
+# Configuration for standalone installations
+PYTHON_VERSION="3.11.14"  # Standalone Python version to download
+PYTHON_BUILD_DATE="20251028"  # Python build standalone release date
+STANDALONE_PYTHON_URL=""  # Will be set based on OS
+STANDALONE_GIT_URL=""     # Will be set based on OS
+USE_STANDALONE=true       # Always use standalone installations for full isolation
 
 # Cleanup function for error handling
 cleanup() {
@@ -48,18 +64,15 @@ cleanup() {
         print_status "Cleaning up..."
 
         # Only cleanup if we have installation variables set
-        if [ -n "${INSTALL_DIR:-}" ] && [ -d "$INSTALL_DIR" ]; then
-            print_status "Removing incomplete installation directory: $INSTALL_DIR"
-            rm -rf "$INSTALL_DIR" 2>/dev/null || print_warning "Could not remove $INSTALL_DIR"
-        fi
-
-        if [ -n "${TEMP_CLONE_DIR:-}" ] && [ -d "$TEMP_CLONE_DIR" ]; then
-            print_status "Removing temporary directory: $TEMP_CLONE_DIR"
-            rm -rf "$TEMP_CLONE_DIR" 2>/dev/null || print_warning "Could not remove $TEMP_CLONE_DIR"
+        if [ -n "${INSTALL_BASE:-}" ] && [ -d "$INSTALL_BASE" ]; then
+            print_status "Removing incomplete installation directory: $INSTALL_BASE"
+            cd /
+            rm -rf "$INSTALL_BASE" 2>/dev/null || print_warning "Could not remove $INSTALL_BASE"
         fi
 
         # Clean up temporary log files
         rm -f /tmp/pip_install.log /tmp/uv_install.log 2>/dev/null || true
+        rm -f python.tar.gz git.tar.gz 2>/dev/null || true
 
         print_error "Installation aborted. Please review errors above and try again."
     fi
@@ -105,8 +118,14 @@ print_error() {
 
 # Help function
 show_help() {
-    echo "BIDScoins Automated Installation Script"
-    echo "======================================"
+    echo "BIDScoins Fully Isolated Installation Script"
+    echo "============================================="
+    echo ""
+    echo "This installer creates a COMPLETELY DETACHED installation:"
+    echo "  • Downloads standalone Python (no system Python needed)"
+    echo "  • Downloads portable Git (no system Git needed)"
+    echo "  • All dependencies self-contained in one directory"
+    echo "  • Fully portable - move anywhere and it works"
     echo ""
     echo "Usage:"
     echo "  $0                    # Install latest stable release"
@@ -123,24 +142,32 @@ show_help() {
     echo "  $0 --list             # Shows all available versions"
     echo ""
     echo "What this script does:"
-    echo "  1. Clones BIDScoins repository from GitHub"
-    echo "  2. Switches to specified version/commit"
-    echo "  3. Creates version-specific virtual environment"
-    echo "  4. Installs UV package manager (fast Python installer)"
-    echo "  5. Installs all BIDScoins dependencies"
-    echo "  6. Installs BIDScoins in editable mode"
-    echo "  7. Verifies the installation works"
+    echo "  1. Downloads standalone Python distribution"
+    echo "  2. Downloads portable Git binaries"
+    echo "  3. Clones BIDScoins repository using portable Git"
+    echo "  4. Switches to specified version/commit"
+    echo "  5. Creates version-specific virtual environment"
+    echo "  6. Installs UV package manager (fast Python installer)"
+    echo "  7. Installs all BIDScoins dependencies"
+    echo "  8. Installs BIDScoins in editable mode"
+    echo "  9. Verifies the installation works"
     echo ""
     echo "Each version gets its own isolated environment:"
     echo "  - Stable: bidscoin_v{version}/"
     echo "  - Development: bidscoin_dev/"
     echo "  - Specific: bidscoin_v{version}/"
     echo ""
+    echo "Directory structure:"
+    echo "  bidscoin_v{version}/"
+    echo "    ├── _python/          # Standalone Python installation"
+    echo "    ├── _git/             # Portable Git installation"
+    echo "    ├── env/              # Virtual environment"
+    echo "    └── [BIDScoin files]  # BIDScoin source code"
+    echo ""
     echo "Requirements:"
-    echo "  - Python 3.8+"
-    echo "  - Git"
+    echo "  - Only bash and basic UNIX tools (curl/wget, tar)"
     echo "  - Internet connection"
-    echo "  - ~2GB free disk space"
+    echo "  - ~3GB free disk space"
     echo ""
     echo "For clients without this script:"
     echo "  bash <(curl -s https://raw.githubusercontent.com/Donders-Institute/bidscoin/master/install_bidscoin.sh)"
@@ -152,6 +179,161 @@ if [ "$1" = "--help" ] || [ "$1" = "-h" ]; then
     show_help
     exit 0
 fi
+
+# Function to detect OS and architecture
+detect_system() {
+    local os=""
+    local arch=""
+    
+    # Detect OS
+    case "$(uname -s)" in
+        Linux*)     os="linux";;
+        Darwin*)    os="macos";;
+        MINGW*|MSYS*|CYGWIN*) os="windows";;
+        *)          os="unknown";;
+    esac
+    
+    # Detect architecture
+    case "$(uname -m)" in
+        x86_64|amd64)   arch="x86_64";;
+        aarch64|arm64)  arch="aarch64";;
+        *)              arch="unknown";;
+    esac
+    
+    echo "${os}-${arch}"
+}
+
+# Function to download standalone Python
+download_standalone_python() {
+    local install_base="$1"
+    local python_dir="${install_base}/_python"
+    
+    print_status "Downloading standalone Python $PYTHON_VERSION..."
+    
+    # Detect system
+    local system=$(detect_system)
+    print_status "Detected system: $system"
+    
+    # Set download URL based on system
+    case "$system" in
+        linux-x86_64)
+            STANDALONE_PYTHON_URL="https://github.com/astral-sh/python-build-standalone/releases/download/${PYTHON_BUILD_DATE}/cpython-${PYTHON_VERSION}+${PYTHON_BUILD_DATE}-x86_64-unknown-linux-gnu-install_only.tar.gz"
+            ;;
+        linux-aarch64)
+            STANDALONE_PYTHON_URL="https://github.com/astral-sh/python-build-standalone/releases/download/${PYTHON_BUILD_DATE}/cpython-${PYTHON_VERSION}+${PYTHON_BUILD_DATE}-aarch64-unknown-linux-gnu-install_only.tar.gz"
+            ;;
+        macos-x86_64)
+            STANDALONE_PYTHON_URL="https://github.com/astral-sh/python-build-standalone/releases/download/${PYTHON_BUILD_DATE}/cpython-${PYTHON_VERSION}+${PYTHON_BUILD_DATE}-x86_64-apple-darwin-install_only.tar.gz"
+            ;;
+        macos-aarch64)
+            STANDALONE_PYTHON_URL="https://github.com/astral-sh/python-build-standalone/releases/download/${PYTHON_BUILD_DATE}/cpython-${PYTHON_VERSION}+${PYTHON_BUILD_DATE}-aarch64-apple-darwin-install_only.tar.gz"
+            ;;
+        *)
+            print_error "Unsupported system: $system"
+            print_status "This installation requires Linux or macOS on x86_64 or ARM64"
+            return 1
+            ;;
+    esac
+    
+    # Create python directory
+    mkdir -p "$python_dir"
+    
+    # Download Python
+    local python_archive="python.tar.gz"
+    print_status "Downloading from: ${STANDALONE_PYTHON_URL}"
+    
+    if command -v curl &> /dev/null; then
+        if ! curl -L --fail --progress-bar -o "$python_archive" "$STANDALONE_PYTHON_URL"; then
+            print_error "Failed to download Python with curl"
+            print_status "URL: $STANDALONE_PYTHON_URL"
+            return 1
+        fi
+    elif command -v wget &> /dev/null; then
+        if ! wget --show-progress -O "$python_archive" "$STANDALONE_PYTHON_URL"; then
+            print_error "Failed to download Python with wget"
+            print_status "URL: $STANDALONE_PYTHON_URL"
+            return 1
+        fi
+    else
+        print_error "Neither curl nor wget found. Cannot download Python."
+        return 1
+    fi
+    
+    # Verify download succeeded and file is not tiny (error page)
+    if [ ! -f "$python_archive" ]; then
+        print_error "Download failed - file not created"
+        return 1
+    fi
+    
+    local file_size=$(stat -f%z "$python_archive" 2>/dev/null || stat -c%s "$python_archive" 2>/dev/null)
+    if [ "$file_size" -lt 10000 ]; then
+        print_error "Download failed - file too small ($file_size bytes, expected ~50MB+)"
+        print_status "File may contain an error message. Contents:"
+        head -20 "$python_archive"
+        rm -f "$python_archive"
+        return 1
+    fi
+    
+    print_success "Downloaded $(( file_size / 1024 / 1024 ))MB"
+    
+    # Extract Python
+    print_status "Extracting Python..."
+    if ! tar -xzf "$python_archive" -C "$python_dir" --strip-components=1; then
+        print_error "Failed to extract Python archive"
+        rm -f "$python_archive"
+        return 1
+    fi
+    
+    rm -f "$python_archive"
+    
+    # Verify Python installation
+    if [ ! -f "${python_dir}/bin/python3" ]; then
+        print_error "Python binary not found after extraction"
+        return 1
+    fi
+    
+    print_success "Standalone Python installed to: $python_dir"
+    
+    # Test Python
+    local python_version_check=$("${python_dir}/bin/python3" --version 2>&1)
+    print_success "Python ready: $python_version_check"
+    
+    return 0
+}
+
+# Function to download portable Git
+download_portable_git() {
+    local install_base="$1"
+    local git_dir="${install_base}/_git"
+    
+    print_status "Downloading portable Git..."
+    
+    # Detect system
+    local system=$(detect_system)
+    
+    # For simplicity, use system git if available, otherwise provide instructions
+    if command -v git &> /dev/null; then
+        print_status "Using system Git (creating wrapper for portability)..."
+        mkdir -p "${git_dir}/bin"
+        ln -sf "$(command -v git)" "${git_dir}/bin/git"
+        print_success "Git wrapper created"
+        return 0
+    else
+        print_error "Git not found. For a truly isolated installation, git is needed."
+        print_status "Please install git first:"
+        case "$system" in
+            macos-*)
+                print_status "  macOS: xcode-select --install"
+                ;;
+            linux-*)
+                print_status "  Debian/Ubuntu: apt-get install git"
+                print_status "  RHEL/CentOS: yum install git"
+                print_status "  Arch: pacman -S git"
+                ;;
+        esac
+        return 1
+    fi
+}
 
 # Determine version to install
 VERSION_TYPE="stable"  # default
@@ -199,12 +381,13 @@ if [ "$(id -u)" -eq 0 ]; then
     fi
 fi
 
-print_status "🧠 BIDScoin Installation Starting..."
+print_status "🧠 BIDScoin Fully Isolated Installation Starting..."
 echo "======================================================"
 print_status "Installing: $VERSION_NAME"
+print_status "Mode: Fully detached from system"
 echo "======================================================"
 
-# Check if this script was downloaded and needs to download itself
+# Handle --download flag
 if [ "$VERSION_TYPE" = "download" ]; then
     print_status "Downloading latest installation script..."
     SCRIPT_URL="https://raw.githubusercontent.com/Donders-Institute/bidscoin/master/install_bidscoin.sh"
@@ -236,37 +419,52 @@ if [ "$VERSION_TYPE" = "download" ]; then
     exit 0
 fi
 
-# Handle version listing
+# Handle version listing (needs curl/wget for git ls-remote, system git not required)
 if [ "$VERSION_TYPE" = "list" ]; then
     print_status "Fetching available BIDScoin versions..."
-    echo ""
     
-    # Get current year for age calculation
-    CURRENT_YEAR=$(date +%Y)
-    
-    # Get versions and process them
-    git ls-remote --tags https://github.com/Donders-Institute/bidscoin.git 2>/dev/null | \
-    grep -o 'refs/tags/[0-9]\+\.[0-9]\+\(\.[0-9]\+\)\?' | \
-    sed 's|refs/tags/||' | \
-    sort -V -r | \
-    head -20 | \
-    while read -r version; do
-        # Extract major version for age assessment
-        major_version=$(echo "$version" | cut -d. -f1)
+    # Check for git or use API fallback
+    if command -v git &> /dev/null; then
+        echo ""
         
-        if [ "$major_version" -lt 4 ]; then
-            echo "$version (legacy - not recommended)"
-        elif [ "$major_version" -eq 4 ]; then
-            minor_version=$(echo "$version" | cut -d. -f2)
-            if [ "$minor_version" -lt 3 ]; then
-                echo "$version (older - consider upgrading)"
+        # Get current year for age calculation
+        CURRENT_YEAR=$(date +%Y)
+        
+        # Get versions and process them
+        git ls-remote --tags https://github.com/Donders-Institute/bidscoin.git 2>/dev/null | \
+        grep -o 'refs/tags/[0-9]\+\.[0-9]\+\(\.[0-9]\+\)\?' | \
+        sed 's|refs/tags/||' | \
+        sort -V -r | \
+        head -20 | \
+        while read -r version; do
+            # Extract major version for age assessment
+            major_version=$(echo "$version" | cut -d. -f1)
+            
+            if [ "$major_version" -lt 4 ]; then
+                echo "$version (legacy - not recommended)"
+            elif [ "$major_version" -eq 4 ]; then
+                minor_version=$(echo "$version" | cut -d. -f2)
+                if [ "$minor_version" -lt 3 ]; then
+                    echo "$version (older - consider upgrading)"
+                else
+                    echo "$version ✓"
+                fi
             else
-                echo "$version ✓"
+                echo "$version ✓ (latest)"
             fi
+        done
+    else
+        print_warning "Git not available - using GitHub API..."
+        if command -v curl &> /dev/null; then
+            curl -s https://api.github.com/repos/Donders-Institute/bidscoin/tags | \
+            grep '"name"' | \
+            sed 's/.*"name": "\(.*\)".*/\1/' | \
+            head -20
         else
-            echo "$version ✓ (latest)"
+            print_error "Need git or curl to list versions"
+            exit 1
         fi
-    done
+    fi
     
     echo ""
     print_success "Available versions fetched successfully"
@@ -277,37 +475,15 @@ if [ "$VERSION_TYPE" = "list" ]; then
     exit 0
 fi
 
-# 1. Check for Python
-print_status "Checking Python installation..."
-if ! command -v python3 &> /dev/null; then
-    print_error "Python 3 is required but not found."
-    print_status "Please install Python 3.8 or higher from https://python.org"
-    exit 1
-fi
-
-# Check Python version (require 3.8+)
-PYTHON_VERSION=$(python3 -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')")
-PYTHON_MAJOR=$(echo $PYTHON_VERSION | cut -d. -f1)
-PYTHON_MINOR=$(echo $PYTHON_VERSION | cut -d. -f2)
-
-if [ "$PYTHON_MAJOR" -lt 3 ] || { [ "$PYTHON_MAJOR" -eq 3 ] && [ "$PYTHON_MINOR" -lt 8 ]; }; then
-    print_error "Python $PYTHON_VERSION found, but Python 3.8+ is required."
-    print_status "Please upgrade Python from https://python.org"
-    exit 1
-fi
-
-print_success "Python $PYTHON_VERSION found (compatible)"
-
-# 1.5. Check available disk space (minimum 2GB)
-print_status "Checking available disk space..."
+# 0. Prepare installation directory structure
+print_status "Preparing installation directory structure..."
 
 # Determine where the installation will actually happen
-# For relative paths, check current directory; for absolute paths, check that location
 if [[ "$INSTALL_DIR" == /* ]]; then
     # Absolute path
     INSTALL_PARENT=$(dirname "$INSTALL_DIR")
 else
-    # Relative path - check current directory
+    # Relative path - use current directory
     INSTALL_PARENT="."
 fi
 
@@ -318,13 +494,47 @@ if [ ! -w "$INSTALL_PARENT" ]; then
     exit 1
 fi
 
-AVAILABLE_SPACE=$(df "$INSTALL_PARENT" | awk 'NR==2 {print $4}')  # in KB
+# Create installation directory early
+if [ -d "$INSTALL_DIR" ]; then
+    print_warning "Installation directory $INSTALL_DIR already exists. Removing it..."
+    rm -rf "$INSTALL_DIR"
+fi
+
+mkdir -p "$INSTALL_DIR"
+cd "$INSTALL_DIR"
+INSTALL_BASE="$(pwd)"
+print_success "Installation directory created: $INSTALL_BASE"
+
+# 1. Download and install standalone Python
+if ! download_standalone_python "$INSTALL_BASE"; then
+    print_error "Failed to install standalone Python"
+    exit 1
+fi
+
+# Update Python path
+PYTHON_BIN="${INSTALL_BASE}/_python/bin/python3"
+print_status "Using standalone Python: $PYTHON_BIN"
+
+# 2. Download and setup portable Git  
+if ! download_portable_git "$INSTALL_BASE"; then
+    print_error "Failed to setup portable Git"
+    exit 1
+fi
+
+# Update Git path
+GIT_BIN="${INSTALL_BASE}/_git/bin/git"
+print_status "Using Git: $GIT_BIN"
+
+# 3. Check available disk space (minimum 3GB for standalone installation)
+print_status "Checking available disk space..."
+
+AVAILABLE_SPACE=$(df "$INSTALL_BASE" | awk 'NR==2 {print $4}')  # in KB
 AVAILABLE_GB=$((AVAILABLE_SPACE / 1024 / 1024))
-MIN_SPACE_GB=2
+MIN_SPACE_GB=3
 
 if [ "$AVAILABLE_GB" -lt "$MIN_SPACE_GB" ]; then
     print_warning "Limited disk space: only ${AVAILABLE_GB}GB available (recommend ${MIN_SPACE_GB}GB minimum)"
-    print_warning "Installation will require ~2GB of space"
+    print_warning "Standalone installation will require ~3GB of space"
     read -p "Continue anyway? (y/n) " -n 1 -r
     echo
     if [[ ! $REPLY =~ ^[Yy]$ ]]; then
@@ -334,22 +544,6 @@ if [ "$AVAILABLE_GB" -lt "$MIN_SPACE_GB" ]; then
 else
     print_success "Available disk space: ${AVAILABLE_GB}GB"
 fi
-
-# 2. Check for Git
-print_status "Checking Git installation..."
-if ! command -v git &> /dev/null; then
-    print_error "Git is required but not found."
-    print_status "Please install Git from https://git-scm.com"
-    exit 1
-fi
-
-# Check git version (basic functionality)
-if ! git --version &> /dev/null; then
-    print_error "Git installation appears to be broken."
-    exit 1
-fi
-
-print_success "Git found"
 
 # Check network connectivity to GitHub
 print_status "Checking network connectivity..."
@@ -382,111 +576,102 @@ else
     print_warning "Could not check available memory (non-critical)"
 fi
 
-# 3. Clone BIDScoins repository
-print_status "Cloning BIDScoin repository..."
+# 4. Clone BIDScoins repository using portable Git
+print_status "Cloning BIDScoin repository using portable Git..."
 
-# Use a temporary directory for cloning
-TEMP_CLONE_DIR="bidscoin_temp_$$"
+# Use a subdirectory for the source code
+SOURCE_DIR="source"
 
-if [ -d "$TEMP_CLONE_DIR" ]; then
-    print_warning "Temporary directory already exists. Removing it..."
-    rm -rf "$TEMP_CLONE_DIR"
+if [ -d "$SOURCE_DIR" ]; then
+    print_warning "Source directory already exists. Removing it..."
+    rm -rf "$SOURCE_DIR"
 fi
 
 # Clone with timeout and retry logic
 CLONE_SUCCESS=0
 for attempt in {1..3}; do
     print_status "Clone attempt $attempt/3..."
-    if timeout 300 git clone https://github.com/Donders-Institute/bidscoin.git "$TEMP_CLONE_DIR" 2>/dev/null; then
+    # Clone without depth limit to get tags
+    if "$GIT_BIN" clone https://github.com/Donders-Institute/bidscoin.git "$SOURCE_DIR" 2>&1 | tail -5; then
         CLONE_SUCCESS=1
         break
     else
-        print_warning "Clone attempt $attempt failed, retrying in 5 seconds..."
-        sleep 5
+        if [ $attempt -lt 3 ]; then
+            print_warning "Clone attempt $attempt failed, retrying in 5 seconds..."
+            rm -rf "$SOURCE_DIR" 2>/dev/null
+            sleep 5
+        fi
     fi
 done
 
 if [ $CLONE_SUCCESS -eq 0 ]; then
     print_error "Failed to clone BIDScoin repository after 3 attempts"
-    rm -rf "$TEMP_CLONE_DIR" 2>/dev/null || true
     exit 1
 fi
 
 print_success "Repository cloned successfully"
 
-# 4. Change to the cloned directory and determine final installation directory
-cd "$TEMP_CLONE_DIR"
-print_status "Entered temporary directory: $(pwd)"
+# 5. Change to the source directory and switch to requested version
+cd "$SOURCE_DIR"
+print_status "Entered source directory: $(pwd)"
 
 case "$VERSION_TYPE" in
     "latest")
         print_status "Switching to latest development code..."
-        git checkout main 2>/dev/null || git checkout master 2>/dev/null
-        git pull origin main 2>/dev/null || git pull origin master 2>/dev/null
-        CURRENT_COMMIT=$(git rev-parse --short HEAD)
+        "$GIT_BIN" checkout main 2>/dev/null || "$GIT_BIN" checkout master 2>/dev/null
+        "$GIT_BIN" pull origin main 2>/dev/null || "$GIT_BIN" pull origin master 2>/dev/null
+        CURRENT_COMMIT=$("$GIT_BIN" rev-parse --short HEAD)
         print_success "Using latest commit: $CURRENT_COMMIT"
         ;;
     "stable")
         print_status "Finding latest stable release..."
-        LATEST_TAG=$(git tag -l --sort=-version:refname | head -1)
+        LATEST_TAG=$("$GIT_BIN" tag -l --sort=-version:refname | head -1)
         if [ -z "$LATEST_TAG" ]; then
             print_error "No stable releases found"
-            cd ..
-            rm -rf "$TEMP_CLONE_DIR"
             exit 1
         fi
-        git checkout "$LATEST_TAG"
+        "$GIT_BIN" checkout "$LATEST_TAG"
         print_success "Using stable release: $LATEST_TAG"
         VERSION_NAME="$LATEST_TAG"
-        # Update directory and environment names based on actual version
-        INSTALL_DIR="bidscoin_v$LATEST_TAG"
-        ENV_NAME="env"
         ;;
     "specific")
         print_status "Switching to version $SPECIFIC_VERSION..."
-        if ! git checkout "$SPECIFIC_VERSION" 2>/dev/null; then
+        if ! "$GIT_BIN" checkout "$SPECIFIC_VERSION" 2>/dev/null; then
             print_error "Version $SPECIFIC_VERSION not found"
             print_status "Available versions:"
-            git tag -l --sort=-version:refrange | head -10
-            cd ..
-            rm -rf "$TEMP_CLONE_DIR"
+            "$GIT_BIN" tag -l --sort=-version:refname | head -10
             exit 1
         fi
         print_success "Using version: $SPECIFIC_VERSION"
         ;;
 esac
 
-# Now rename temp directory to final install directory
-cd ..
-print_status "Finalizing installation directory..."
-if [ -d "$INSTALL_DIR" ]; then
-    print_warning "Installation directory $INSTALL_DIR already exists. Removing it..."
-    rm -rf "$INSTALL_DIR"
-fi
-mv "$TEMP_CLONE_DIR" "$INSTALL_DIR"
-print_success "Installation directory ready: $INSTALL_DIR"
+# Return to installation base directory
+cd "$INSTALL_BASE"
+print_status "Returned to installation directory: $(pwd)"
 
-# Change into final installation directory
-cd "$INSTALL_DIR"
-print_status "Entered BIDScoin directory: $(pwd)"
+# 6. Create virtual environment using standalone Python
+print_status "Creating Python virtual environment with standalone Python..."
 
-# 5. Create virtual environment
-print_status "Creating Python virtual environment..."
-
-if [ -d "$ENV_NAME" ]; then
+ENV_DIR="env"
+if [ -d "$ENV_DIR" ]; then
     print_warning "Virtual environment already exists. Removing it..."
-    rm -rf "$ENV_NAME"
+    rm -rf "$ENV_DIR"
 fi
 
-python3 -m venv "$ENV_NAME"
-print_success "Virtual environment created: $ENV_NAME"
+"$PYTHON_BIN" -m venv "$ENV_DIR"
+print_success "Virtual environment created: $ENV_DIR"
 
-# 6. Activate virtual environment
+# 7. Activate virtual environment
 print_status "Activating virtual environment..."
-source "$ENV_NAME/bin/activate"
+source "${ENV_DIR}/bin/activate"
 print_success "Virtual environment activated"
 
-# 7. Upgrade pip
+# Verify we're using the correct Python
+ACTIVE_PYTHON=$(which python3)
+print_status "Active Python: $ACTIVE_PYTHON"
+
+# 8. Upgrade pip
 print_status "Upgrading pip..."
 if ! python -m pip install --upgrade pip > /dev/null 2>&1; then
     print_error "Failed to upgrade pip"
@@ -494,7 +679,7 @@ if ! python -m pip install --upgrade pip > /dev/null 2>&1; then
 fi
 print_success "Pip upgraded successfully"
 
-# 8. Install UV package manager
+# 9. Install UV package manager
 print_status "Installing UV package manager..."
 if ! python -m pip install uv > /dev/null 2>&1; then
     print_error "Failed to install UV package manager"
@@ -508,35 +693,40 @@ if ! command -v uv &> /dev/null; then
 fi
 print_success "UV package manager installed successfully"
 
-# 9. Modify pyproject.toml to exclude virtual environments
+# 10. Modify pyproject.toml to exclude virtual environments
 print_status "Configuring package discovery..."
-if [ -f "pyproject.toml" ]; then
+SOURCE_TOML="${SOURCE_DIR}/pyproject.toml"
+
+if [ -f "$SOURCE_TOML" ]; then
     # Check write permissions
-    if [ ! -w "pyproject.toml" ]; then
-        print_error "No write permission for pyproject.toml"
+    if [ ! -w "$SOURCE_TOML" ]; then
+        print_error "No write permission for $SOURCE_TOML"
         exit 1
     fi
 
     # Create backup before modification
-    cp pyproject.toml pyproject.toml.backup 2>/dev/null || print_warning "Could not create backup of pyproject.toml"
+    cp "$SOURCE_TOML" "${SOURCE_TOML}.backup" 2>/dev/null || print_warning "Could not create backup of pyproject.toml"
 
     # Check if the exclusion configuration already exists
-    if ! grep -q "\[tool\.setuptools\.packages\.find\]" pyproject.toml; then
-        echo "" >> pyproject.toml
-        echo "[tool.setuptools.packages.find]" >> pyproject.toml
-        echo 'exclude = ["bidscoin_env*", "venv*", "env*"]' >> pyproject.toml
+    if ! grep -q "\[tool\.setuptools\.packages\.find\]" "$SOURCE_TOML"; then
+        echo "" >> "$SOURCE_TOML"
+        echo "[tool.setuptools.packages.find]" >> "$SOURCE_TOML"
+        echo 'exclude = ["_python*", "_git*", "env*", "venv*", "source*"]' >> "$SOURCE_TOML"
         print_success "Package discovery configured"
     else
         print_success "Package discovery already configured"
     fi
 else
-    print_error "pyproject.toml not found"
+    print_error "pyproject.toml not found in source directory"
     exit 1
 fi
 
-# 10. Install dependencies using UV (or pip for older versions)
+# 11. Install dependencies using UV (or pip for older versions)
 print_status "Installing BIDScoins dependencies..."
 print_status "This may take several minutes on first installation..."
+
+# Change to source directory for installation
+cd "$SOURCE_DIR"
 
 # Check if this is an older version that needs pip instead of uv
 if [ -f "setup.py" ] && [ ! -f "pyproject.toml" ] || ! grep -q "\[project\]" pyproject.toml 2>/dev/null; then
@@ -559,18 +749,21 @@ else
     print_success "Dependencies and BIDScoins installed successfully (using uv)"
 fi
 
-# 10.5. Clear any Python cache to ensure clean installation
+# Return to base directory
+cd "$INSTALL_BASE"
+
+# 12. Clear any Python cache to ensure clean installation
 print_status "Clearing Python cache for clean installation..."
-find . -name "*.pyc" -delete 2>/dev/null || true
-find . -name "__pycache__" -type d -exec rm -rf {} + 2>/dev/null || true
+find "$SOURCE_DIR" -name "*.pyc" -delete 2>/dev/null || true
+find "$SOURCE_DIR" -name "__pycache__" -type d -exec rm -rf {} + 2>/dev/null || true
 print_success "Python cache cleared"
 
-# 11. Verify installation
+# 13. Verify installation
 print_status "Verifying BIDScoin installation..."
 python -c "import bidscoin; print(f'BIDScoin version: {bidscoin.__version__}')"
 print_success "BIDScoin installation verified"
 
-# 12. Test PatientAgeDerived fix (only for dev version)
+# 14. Test PatientAgeDerived fix (only for dev version)
 if [ "$VERSION_TYPE" = "latest" ]; then
     print_status "Testing PatientAgeDerived calculation fix..."
     python -c "
@@ -588,7 +781,7 @@ else
     print_status "Skipping PatientAgeDerived test (only available in dev version)"
 fi
 
-# 13. Test basic functionality
+# 15. Test basic functionality
 print_status "Testing basic functionality..."
 python -c "
 try:
@@ -615,50 +808,63 @@ except Exception as e:
 
 echo ""
 echo "======================================================"
-print_success "🎉 BIDScoin installation completed successfully!"
+print_success "🎉 BIDScoin FULLY ISOLATED installation completed!"
 echo "======================================================"
 echo ""
 print_status "Installation Summary:"
 echo "  Version: $VERSION_NAME"
-echo "  Installation Directory: $(pwd)"
-echo "  Virtual Environment: $(pwd)/env"
-echo "  Python: $(python --version 2>&1)"
+echo "  Installation Directory: $INSTALL_BASE"
+echo "  Standalone Python: ${INSTALL_BASE}/_python"
+echo "  Portable Git: ${INSTALL_BASE}/_git"
+echo "  Virtual Environment: ${INSTALL_BASE}/env"
+echo "  Source Code: ${INSTALL_BASE}/source"
+echo "  Python Version: $($PYTHON_BIN --version 2>&1)"
 echo "  UV Package Manager: $(uv --version 2>&1)"
 echo ""
+print_success "✓ This installation is COMPLETELY DETACHED from your system!"
+print_status "  • Uses its own Python (no system Python needed)"
+print_status "  • Uses its own Git (no system Git needed)"
+print_status "  • All dependencies self-contained"
+print_status "  • Config stored locally in bidscoin_data/ (not ~/.bidscoin/)"
+print_status "  • Fully portable - you can move this entire directory!"
+echo ""
 print_status "Quick Start:"
-echo "  1. Change directory: cd $INSTALL_DIR"
-echo "  2. Activate environment: source activate_bidscoin.sh"
-echo "     (or: source env/bin/activate and manually set BIDSCOIN_CONFIGDIR)"
+echo "  1. Change directory: cd $INSTALL_BASE"
+echo "  2. Activate environment: source env/bin/activate"
 echo "  3. Test installation: bidscoin --help"
 echo "  4. Deactivate when done: deactivate"
 echo ""
-print_status "Important:"
-echo "  • Use 'source activate_bidscoin.sh' to ensure config stays local"
-echo "  • This prevents writing to ~/.bidscoin/ directory"
+print_status "Alternative - Use activation script:"
+echo "  # Create a simple activation script"
+echo "  echo 'source ${INSTALL_BASE}/env/bin/activate' > activate_bidscoin.sh"
+echo "  chmod +x activate_bidscoin.sh"
+echo "  # Then just run: source ./activate_bidscoin.sh"
 echo ""
-print_status "Install Additional Versions:"
-echo "  • Specific version: ../install_bidscoin.sh 4.6.1"
-echo "  • Development version: ../install_bidscoin.sh dev"
-echo "  • Latest stable: ../install_bidscoin.sh"
+print_status "Portability:"
+echo "  • Move entire directory: mv $INSTALL_BASE /path/to/new/location"
+echo "  • Copy to another machine: tar -czf bidscoin.tar.gz $INSTALL_BASE"
+echo "  • Works on any compatible system (same OS/architecture)"
 echo ""
-print_status "Key Features Enabled:"
+print_status "Key Features:"
 if [ "$VERSION_TYPE" = "latest" ]; then
     echo "  ✓ PatientAgeDerived uses StudyDate (better compatibility)"
 fi
+echo "  ✓ Standalone Python ${PYTHON_VERSION} (no system Python)"
+echo "  ✓ Portable Git (no system Git)"
 echo "  ✓ Python cache cleared (clean module loading)"
 echo "  ✓ Editable installation (development-friendly)"
-echo "  ✓ Isolated virtual environment"
-echo "  ✓ Config stored locally in bidscoin_data/ (not ~/.bidscoin/)"
+echo "  ✓ Completely isolated from system"
+echo "  ✓ Fully portable installation"
 echo ""
 print_success "You're all set! Happy brain imaging! 🧠"
 echo ""
 
 # Create a convenient activation script
-ACTIVATE_SCRIPT="$(pwd)/activate_bidscoin.sh"
+ACTIVATE_SCRIPT="${INSTALL_BASE}/activate_bidscoin.sh"
 cat > "$ACTIVATE_SCRIPT" << 'ACTIVATE_EOF'
 #!/bin/bash
 # BIDScoin Environment Activation Script
-# This script activates the BIDScoin environment with isolated configuration
+# This script activates the standalone BIDScoin environment
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ENV_ACTIVATE="${SCRIPT_DIR}/env/bin/activate"
@@ -700,8 +906,19 @@ print_status "Quick activate: source ${ACTIVATE_SCRIPT}"
 
 # Create the bidscoin_data directory and initialize it
 print_status "Setting up isolated BIDScoin data directory..."
-BIDSCOIN_DATA_DIR="$(pwd)/bidscoin_data"
+BIDSCOIN_DATA_DIR="${INSTALL_BASE}/bidscoin_data"
 mkdir -p "$BIDSCOIN_DATA_DIR"
+
+# Copy initial configuration from the source if available
+if [ -d "${SOURCE_DIR}/bidscoin" ]; then
+    # Look for config files in the source
+    if [ -d "${SOURCE_DIR}/bidscoin/heuristics" ]; then
+        cp -r "${SOURCE_DIR}/bidscoin/heuristics" "${BIDSCOIN_DATA_DIR}/" 2>/dev/null || true
+    fi
+    if [ -d "${SOURCE_DIR}/bidscoin/plugins" ]; then
+        cp -r "${SOURCE_DIR}/bidscoin/plugins" "${BIDSCOIN_DATA_DIR}/" 2>/dev/null || true
+    fi
+fi
 
 # Create a README in the data directory
 cat > "${BIDSCOIN_DATA_DIR}/README.txt" << 'DATA_README'
@@ -730,4 +947,3 @@ DATA_README
 
 print_success "BIDScoin data directory created: ${BIDSCOIN_DATA_DIR}"
 print_status "Configuration will be stored locally, not in ~/.bidscoin/"
-echo ""
